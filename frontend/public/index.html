@@ -1001,7 +1001,7 @@
             <div class="faq-item" id="faq5">
                 <div class="faq-question" data-i18n="faq5_question">What does "household income" include?</div>
                 <div class="faq-answer" data-i18n="[html]faq5_answer">
-                    It's based on the Household Income Survey (table 36-10-0587-01), which doesn't have the same level of detail as the census income data. To get an approximation of the income as we commonly think of it (i.e., the amount we see in our employment contract before taxes), we added back the "current transfers paid" to the disposable income.
+                    It is the combined before-tax income of everyone in a household. The figures come from <a href="https://www.cmhc-schl.gc.ca/professionals/housing-markets-data-and-research/housing-data/data-tables/household-characteristics/real-average-before-tax-household-income-quintiles" target="_blank" rel="noopener noreferrer">CMHC's household-income quintile table</a>, based on Statistics Canada's Canadian Income Survey.
                 </div>
             </div>
 
@@ -1015,7 +1015,7 @@
             <div class="faq-item" id="faq8">
                 <div class="faq-question" data-i18n="faq8_question">Why are household income quintile brackets and positions approximate?</div>
                 <div class="faq-answer" data-i18n="[html]faq8_answer">
-                    The household income data only provides quintile averages (5 groups of 20% each), unlike the individual salary data which has detailed percentiles. We use mathematical interpolation to estimate your position within a quintile, which means your exact percentile and bracket are approximations. Future versions may include more sophisticated income interpolations for improved accuracy.
+                    The household income data provides quintile averages (five groups of 20%), rather than detailed percentile cutoffs. We estimate the lower four quintiles on a logarithmic scale and model the upper quintile with a Pareto tail calibrated to its published average. Your result is therefore an estimate, not an official percentile.
                 </div>
             </div>
 
@@ -1170,7 +1170,7 @@
                     bracket_bottom25: "Bottom 25%",
                     error_invalid_income: "Please enter a valid income amount",
                     error_invalid_age: "Please enter a valid age (15-100)",
-                    error_api_connection: "Error connecting to the backend API. Please make sure the server is running.",
+                    error_api_connection: "Could not load the income data. Open the site through a web server (for example, http://localhost), not directly as a file.",
                     tab_individual: "💼 Individual Salary (2020)",
                     tab_household: "🏠 Household Income (2024)",
                     household_income_label: "Household annual income ($)",
@@ -1191,7 +1191,7 @@
                     faq7_question: "What are the current limitations and potential improvements?",
                     faq7_answer: "The individual salary comparison is based on <strong>employment income (wages and salaries)</strong>, which means it's most relevant for people who are currently employed. If you are a retiree or primarily receive income from sources other than employment (such as pensions, investments, or government transfers), these statistics may not be relevant to your situation. A future version of this tool may address this limitation by including additional income categories. <br><br>If you have suggestions for other improvements, please feel free to <a href=\"https://matthieugd.com/a-propos/\" target=\"_blank\" rel=\"noopener noreferrer\">contact me</a>.",
                     faq8_question: "Why are household income quintile brackets and positions approximate?",
-                    faq8_answer: "The household income data only provides quintile averages (5 groups of 20% each), unlike the individual salary data which has detailed percentiles. We use mathematical interpolation to estimate your position within a quintile, which means your exact percentile and bracket are approximations. Future versions may include more sophisticated income interpolations for improved accuracy.",
+                    faq8_answer: "The household income data provides quintile averages (five groups of 20%), rather than detailed percentile cutoffs. We estimate the lower four quintiles on a logarithmic scale and model the upper quintile with a Pareto tail calibrated to its published average. Your result is therefore an estimate, not an official percentile.",
                     faq9_question: "What does the wage inflation adjustment option do?",
                     faq9_answer: "The wage inflation adjustment option (available for individual salary comparisons only) applies a +19.98% adjustment to all income values from the 2020 census data to make the comparison more current. This percentage represents the average wage growth from 2020 to today. When enabled, you'll see how your salary compares against inflation-adjusted figures rather than the raw 2020 census numbers. <strong>Important note:</strong> This adjustment uses an average percentage across all income levels. In reality, wage growth varies across different income percentiles—some groups may have experienced more or less than 19.98% growth. Therefore, the adjusted figures provide a useful approximation but may not perfectly reflect the actual current distribution.",
                     toc_title: "📑 Table of Contents",
@@ -1297,7 +1297,7 @@
                     bracket_bottom25: "Bottom 25 %",
                     error_invalid_income: "Veuillez entrer un montant de revenu valide",
                     error_invalid_age: "Veuillez entrer un âge valide (15-100)",
-                    error_api_connection: "Erreur de connexion à l'API backend. Veuillez vous assurer que le serveur fonctionne.",
+                    error_api_connection: "Impossible de charger les données sur le revenu. Ouvrez le site par l'intermédiaire d'un serveur web (par exemple, http://localhost), et non directement comme fichier.",
                     tab_individual: "💼 Salaire Individuel (2020)",
                     tab_household: "🏠 Revenu du Ménage (2024)",
                     household_income_label: "Revenu annuel du ménage ($)",
@@ -1588,96 +1588,37 @@
             };
         }
 
+        function getHouseholdQuintileBoundaries(quintiles) {
+            const averages = [quintiles.q1.average, quintiles.q2.average, quintiles.q3.average, quintiles.q4.average];
+            const bodyBoundaries = averages.slice(0, -1).map((average, index) =>
+                Math.sqrt(average * averages[index + 1])
+            );
+            const paretoShape = quintiles.paretoShape || 2.1;
+            // For a Pareto tail, E[X | X >= threshold] = threshold * shape / (shape - 1).
+            // Solving for threshold makes the model reproduce the published Q5 average.
+            const q5Boundary = quintiles.q5.average * (paretoShape - 1) / paretoShape;
+            return [...bodyBoundaries, Math.max(bodyBoundaries[2], q5Boundary)];
+        }
+
         function calculateHouseholdPercentile(income, quintiles) {
-            const averages = [
-                quintiles.q1.average,
-                quintiles.q2.average,
-                quintiles.q3.average,
-                quintiles.q4.average,
-                quintiles.q5.average
-            ];
+            const boundaries = getHouseholdQuintileBoundaries(quintiles);
+            const paretoShape = quintiles.paretoShape || 2.1;
 
-            // Quintile averages represent the MIDDLE of each quintile (10th, 30th, 50th, 70th, 90th percentiles)
-            // Calculate boundaries as midpoints between consecutive averages
-            const boundaries = [];
-            for (let i = 0; i < averages.length - 1; i++) {
-                boundaries.push((averages[i] + averages[i + 1]) / 2);
-            }
-            // boundaries[0] = Q1/Q2 boundary (20th percentile)
-            // boundaries[1] = Q2/Q3 boundary (40th percentile)
-            // boundaries[2] = Q3/Q4 boundary (60th percentile)
-            // boundaries[3] = Q4/Q5 boundary (80th percentile)
+            if (income <= 0) return 0;
+            if (income <= boundaries[0]) return 20 * Math.sqrt(income / boundaries[0]);
 
-            // Define reference points for interpolation:
-            // - Start of Q1: income=0 at 0th percentile
-            // - Q1 average: at 10th percentile
-            // - Q1/Q2 boundary: at 20th percentile
-            // - Q2 average: at 30th percentile
-            // - Q2/Q3 boundary: at 40th percentile
-            // - ... and so on
-
-            // Handle Q1 (0-20th percentile)
-            if (income <= boundaries[0]) {
-                if (income <= averages[0]) {
-                    // Between $0 and Q1 average: 0 to 10th percentile
-                    return (income / averages[0]) * 10;
-                } else {
-                    // Between Q1 average and Q1/Q2 boundary: 10th to 20th percentile
-                    const ratio = (income - averages[0]) / (boundaries[0] - averages[0]);
-                    return 10 + ratio * 10;
+            for (let index = 1; index < 4; index++) {
+                if (income <= boundaries[index]) {
+                    const lower = boundaries[index - 1];
+                    const position = Math.log(income / lower) / Math.log(boundaries[index] / lower);
+                    return index * 20 + position * 20;
                 }
             }
 
-            // Handle Q2 (20-40th percentile)
-            if (income <= boundaries[1]) {
-                if (income <= averages[1]) {
-                    // Between Q1/Q2 boundary and Q2 average: 20th to 30th percentile
-                    const ratio = (income - boundaries[0]) / (averages[1] - boundaries[0]);
-                    return 20 + ratio * 10;
-                } else {
-                    // Between Q2 average and Q2/Q3 boundary: 30th to 40th percentile
-                    const ratio = (income - averages[1]) / (boundaries[1] - averages[1]);
-                    return 30 + ratio * 10;
-                }
-            }
-
-            // Handle Q3 (40-60th percentile)
-            if (income <= boundaries[2]) {
-                if (income <= averages[2]) {
-                    // Between Q2/Q3 boundary and Q3 average: 40th to 50th percentile
-                    const ratio = (income - boundaries[1]) / (averages[2] - boundaries[1]);
-                    return 40 + ratio * 10;
-                } else {
-                    // Between Q3 average and Q3/Q4 boundary: 50th to 60th percentile
-                    const ratio = (income - averages[2]) / (boundaries[2] - averages[2]);
-                    return 50 + ratio * 10;
-                }
-            }
-
-            // Handle Q4 (60-80th percentile)
-            if (income <= boundaries[3]) {
-                if (income <= averages[3]) {
-                    // Between Q3/Q4 boundary and Q4 average: 60th to 70th percentile
-                    const ratio = (income - boundaries[2]) / (averages[3] - boundaries[2]);
-                    return 60 + ratio * 10;
-                } else {
-                    // Between Q4 average and Q4/Q5 boundary: 70th to 80th percentile
-                    const ratio = (income - averages[3]) / (boundaries[3] - averages[3]);
-                    return 70 + ratio * 10;
-                }
-            }
-
-            // Handle Q5 (80-100th percentile)
-            if (income <= averages[4]) {
-                // Between Q4/Q5 boundary and Q5 average: 80th to 90th percentile
-                const ratio = (income - boundaries[3]) / (averages[4] - boundaries[3]);
-                return 80 + ratio * 10;
-            } else {
-                // Above Q5 average: 90th to 99.9th percentile
-                // Extrapolate with diminishing returns
-                const ratio = income / averages[4];
-                return Math.min(99.9, 90 + (ratio - 1) * 15);
-            }
+            // Q5 follows a Pareto survival function, calibrated so its conditional mean
+            // equals the CMHC-published Q5 average. This avoids treating the upper tail as linear.
+            const survivalShare = 0.2 * Math.pow(boundaries[3] / income, paretoShape);
+            return Math.min(99.9, 100 * (1 - survivalShare));
         }
 
         function getHouseholdBracket(quintile) {
@@ -2311,20 +2252,8 @@
 
         // Generate distribution data for household income (quintile-based)
         function generateHouseholdDistributionData(quintiles) {
-            // Extract averages - these are at the MIDDLE of each quintile (10th, 30th, 50th, 70th, 90th percentiles)
-            const averages = [
-                quintiles.q1.average,
-                quintiles.q2.average,
-                quintiles.q3.average,
-                quintiles.q4.average,
-                quintiles.q5.average
-            ];
-
-            // Calculate midpoints between averages to create quintile boundaries (20th, 40th, 60th, 80th percentiles)
-            const boundaries = [];
-            for (let i = 0; i < averages.length - 1; i++) {
-                boundaries.push((averages[i] + averages[i + 1]) / 2);
-            }
+            const averages = [quintiles.q1.average, quintiles.q2.average, quintiles.q3.average, quintiles.q4.average, quintiles.q5.average];
+            const boundaries = getHouseholdQuintileBoundaries(quintiles);
 
             // Create 5 brackets based on quintile boundaries
             // Q1: $0 to Q1/Q2 boundary (0-20th percentile, average at ~10th)
@@ -2372,7 +2301,7 @@
                 {
                     label: formatCurrencyK(boundaries[3]) + '+',
                     min: boundaries[3],
-                    max: averages[4] * 1.5, // Extend beyond Q5 average
+                    max: Infinity,
                     average: averages[4],
                     percentage: 20,
                     percentileLabel: 'Q5 (80-100th)',

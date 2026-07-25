@@ -1,32 +1,34 @@
 {
   "geography": "Canada",
   "geographyCode": "CA",
-  "year": 2020,
+  "year": 2024,
   "type": "household",
+  "source": "CMHC, Average before-tax household income by before-tax income quintile, total households (2024 constant dollars)",
   "quintiles": {
+    "paretoShape": 2.1,
     "q1": {
       "label": "First Quintile (Q1)",
-      "average": 39927,
+      "average": 28200,
       "percentage": 20
     },
     "q2": {
       "label": "Second Quintile (Q2)",
-      "average": 80795,
+      "average": 61700,
       "percentage": 20
     },
     "q3": {
       "label": "Third Quintile (Q3)",
-      "average": 119126,
+      "average": 97500,
       "percentage": 20
     },
     "q4": {
       "label": "Fourth Quintile (Q4)",
-      "average": 172691,
+      "average": 146800,
       "percentage": 20
     },
     "q5": {
       "label": "Fifth Quintile (Q5)",
-      "average": 321756,
+      "average": 290400,
       "percentage": 20
     }
   }
